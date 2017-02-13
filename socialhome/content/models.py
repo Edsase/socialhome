@@ -14,7 +14,7 @@ from django_extensions.utils.text import truncate_letters
 from enumfields import EnumIntegerField
 from model_utils.fields import AutoCreatedField, AutoLastModifiedField
 
-from socialhome.content.utils import make_nsfw_safe
+from socialhome.content.utils import make_nsfw_safe, find_tags_in_text
 from socialhome.enums import Visibility
 from socialhome.users.models import User, Profile
 from socialhome.utils import safe_clear_cached_property
@@ -122,9 +122,7 @@ class Content(models.Model):
     def extract_tags(self):
         """Extract tags from the content."""
         current = set(self.tags.values_list("name", flat=True))
-        tags = re.findall(r"#([a-zA-Z0-9-_]+)", self.text)
-        # Fix the tags and make a set
-        tags = set([tag.strip().lower() for tag in tags])
+        tags = find_tags_in_text(self.text)
         if tags == current:
             return
         to_add = tags - current
@@ -157,7 +155,7 @@ class Content(models.Model):
         return self.created
 
     def render(self):
-        text = self.get_text_with_urlized_tags()
+        text = self.get_text_with_linkified_tags()
         rendered = commonmark(text).strip()
         if self.is_nsfw:
             rendered = make_nsfw_safe(rendered)
@@ -172,11 +170,44 @@ class Content(models.Model):
             )
         return rendered
 
-    def get_text_with_urlized_tags(self):
-        """Return text with tags converted to Markdown urls."""
-        text = self.text
-        for tag in self.tags.values_list("name", flat=True):
-            text = text.replace("#%s" % tag, "[#%s](%s)" % (tag, reverse("streams:tags", kwargs={"name": tag})))
+    def get_text_with_linkified_tags(self):
+        """Return text with tags converted to Markdown links.
+
+        Split the text into lines and then words. If the tag is a word, replace it with a Markdown link.
+
+        Tries to avoid linkifying tags in code blocks.
+        """
+        tags = self.tags.values_list("name", flat=True)
+        if not tags:
+            return self.text
+        lines = self.text.splitlines(keepends=True)
+        final_words = []
+        code_block = False
+        for line in lines:
+            if line[0:3] == "```":
+                code_block = not code_block
+            if line.find("#") == -1 or line[0:4] == "    " or code_block:
+                # Just add the whole line
+                final_words.append(line)
+                continue
+            words = line.split(" ")
+            for word in words:
+                if word.startswith("#") and word.strip().strip("#").lower() in tags:
+                    if word.endswith(("\n", "\r", "\r\n")):
+                        line_end = word[-1]
+                    else:
+                        line_end = ""
+                    tag_word = word.strip().strip("#")
+                    final_words.append(
+                        "[#%s](%s)%s" % (
+                            tag_word,
+                            reverse("streams:tags", kwargs={"name": tag_word.lower()}),
+                            line_end
+                        )
+                    )
+                else:
+                    final_words.append(word)
+        text = " ".join(final_words)
         return text
 
     @cached_property

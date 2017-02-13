@@ -1,6 +1,7 @@
 from django.test import TestCase
 
-from socialhome.content.utils import safe_text_for_markdown, safe_text, make_nsfw_safe, find_urls_in_text
+from socialhome.content.utils import safe_text_for_markdown, safe_text, make_nsfw_safe, find_urls_in_text, \
+    find_tags_in_text
 
 PLAIN_TEXT = "abcdefg kissa kävelee"
 MARKDOWN_TEXT = "## header\n\nFoo Bar. *fooo*"
@@ -119,3 +120,30 @@ class TestFindUrlsInText(TestCase):
     def test_href_markdown_etc_skipped(self):
         urls = find_urls_in_text(self.href_and_markdown)
         self.assertEqual(urls, [])
+
+
+class TestFindTagsInText(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.text = "#starting and #MixED with some #line\nendings also tags can\n#start on new line"
+        cls.invalid = "#a!a #a#a #a$a #a%a #a^a #a&a #a*a #a+a #a.a #a,a #a@a #a£a #a/a #a(a #a)a #a=a #a?a #a`a " \
+                      "#a'a #a\\a #a{a #a[a #a]a #a}a #a~a #a;a #a:a #a\"a"
+        cls.endings = "#parenthesis) #exp! #list]"
+
+    def test_all_tags_are_parsed_from_text(self):
+        tags = find_tags_in_text(self.text)
+        self.assertEqual(
+            tags,
+            {"starting", "mixed", "line", "start"}
+        )
+
+    def test_invalid_text_returns_no_tags(self):
+        self.assertEqual(find_tags_in_text(self.invalid), set())
+
+    def test_endings_are_filtered_out(self):
+        tags = find_tags_in_text(self.endings)
+        self.assertEqual(
+            tags,
+            {"parenthesis", "exp", "list"}
+        )

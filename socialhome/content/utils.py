@@ -4,6 +4,9 @@ import bleach
 from bs4 import BeautifulSoup
 
 
+ILLEGAL_TAG_CHARS = "!#$%^&*+.,@£/()=?`'\\{[]}~;:\""
+
+
 def safe_text_for_markdown(text):
     """Clean the text using bleach but keep certain Markdown sections.
 
@@ -68,3 +71,40 @@ def find_urls_in_text(text):
     urls = re.findall(r'^https?://[\w\./\?=#\-&_%\+~:\[\]@\!\$\(\)\*,;]*', text) + \
            re.findall(r'(?<=[ \n]{1})https?://[\w\./\?=#\-&_%\+~:\[\]@\!\$\(\)\*,;]*', text)
     return urls
+
+
+def test_and_clean_tag(tag):
+    """Test and clean a given tag
+
+    A tag is invalid if it contains illegal characters, except if the illegal
+    character is at the end, in which case we just strip it. This allows for tags
+    ending in special characters like question marks still to be recognized.
+    """
+    if not tag:
+        return tag
+    majority, ending = tag[0:len(tag)-1], tag[-1]
+    for char in ILLEGAL_TAG_CHARS:
+        if char in majority:
+            return False
+    if ending in ILLEGAL_TAG_CHARS:
+        return majority
+    return tag
+
+
+def find_tags_in_text(text):
+    """Given a block of text, identify and clean tags out of it.
+
+    All tags are converted to lowercase and returned in a set to
+    ensure no duplicates are returned.
+
+    :rtype: set
+    """
+    # TODO: skip code blocks
+    # TODO: identify also tags prefixed with ( or [
+    tags = {word.strip("#").lower() for word in text.split() if word.startswith("#") and len(word) > 1}
+    fixed_tags = set()
+    for tag in tags:
+        test_result = test_and_clean_tag(tag)
+        if test_result:
+            fixed_tags.add(test_result)
+    return fixed_tags
